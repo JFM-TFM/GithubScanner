@@ -1,6 +1,6 @@
 FROM python:alpine
 WORKDIR /app
-EXPOSE 5000
+EXPOSE 8443
 
 RUN adduser -D --uid 10001 python
 RUN chown -R python:python /app
@@ -20,4 +20,4 @@ COPY main.py .
 
 USER python
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+CMD ["gunicorn", "--certfile", "certs/server.crt", "--keyfile", "certs/server.key",  "--bind", "0.0.0.0:8443", "main:app"]

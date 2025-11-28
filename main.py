@@ -35,6 +35,7 @@ def get_jwt() -> str:
     
     return jwt.encode(payload, private_key, algorithm='RS256')
 
+
 async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> List[Any]:
     """
     Async helper to handle GitHub pagination.
@@ -69,6 +70,7 @@ async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> L
 @app.get("/")
 async def root():
     return {"message": "GitHub App Enterprise Reader (FastAPI). Go to /repos to list repositories."}
+
 
 @app.get("/repos")
 async def list_all_repos():
@@ -139,8 +141,3 @@ async def list_all_repos():
     except Exception as e:
         # catch-all for debugging
         raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    # Use 'main:app' if running from CLI, or this block for debugging
-    uvicorn.run(app, host="0.0.0.0", port=8000)
