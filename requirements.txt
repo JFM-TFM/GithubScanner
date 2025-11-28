@@ -1,0 +1,5 @@
+fastapi
+guincorn
+httpx
+pyjwt
+cryptography
