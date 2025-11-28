@@ -1,5 +1,5 @@
 fastapi
-gunincorn
+gunicorn
 httpx
 pyjwt
 cryptography
