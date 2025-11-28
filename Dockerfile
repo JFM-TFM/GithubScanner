@@ -28,4 +28,4 @@ COPY main.py .
 
 USER python
 
-CMD ["gunicorn", "--certfile", "certs/server.crt", "--keyfile", "certs/server.key",  "--bind", "0.0.0.0:8443", "main:app"]
+CMD ["gunicorn", "--certfile", "certs/server.crt", "--keyfile", "certs/server.key", "-k", "uvicorn.workers.UvicornWorker",  "--bind", "0.0.0.0:8443", "main:app"]
