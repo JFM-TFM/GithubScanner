@@ -25,6 +25,7 @@ RUN apk --purge del curl apk-tools
 RUN rm -f /bin/sh
 
 COPY main.py .
+COPY favicon.ico .
 
 USER python
 
