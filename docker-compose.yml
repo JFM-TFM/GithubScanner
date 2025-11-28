@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  instance:
+    build:
+      context: . # The directory containing your Dockerfile
+      dockerfile: Dockerfile # The name of your Dockerfile
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./certs:/app/certs # Mounts the 'data' directory from your host to '/app/data' inside the container

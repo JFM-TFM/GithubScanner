@@ -3,13 +3,15 @@ import time
 import jwt
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from typing import List, Dict, Any
 
 app = FastAPI(title="GitHub Enterprise Repo Reader")
 
 # --- Configuration ---
-GITHUB_APP_ID = os.environ.get('GITHUB_APP_ID')
-GITHUB_PRIVATE_KEY_PATH = os.environ.get('GITHUB_PRIVATE_KEY_PATH', '/app/cert/private-key.pem')
+GITHUB_APP_ID = os.getenv('GITHUB_APP_ID')
+GITHUB_PRIVATE_KEY_PATH = os.getenv('GITHUB_PRIVATE_KEY_PATH', '/app/cert/private-key.pem')
+FAVICON_PATH = os.getenv('FAVICON_PATH', 'favicon.ico')
 GITHUB_API_URL = "https://api.github.com"
 
 # --- Helper Functions ---
@@ -71,6 +73,10 @@ async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> L
 async def root():
     return {"message": "GitHub App Enterprise Reader (FastAPI). Go to /repos to list repositories."}
 
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(FAVICON_PATH)
 
 @app.get("/repos")
 async def list_all_repos():
