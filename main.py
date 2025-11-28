@@ -10,7 +10,7 @@ app = FastAPI(title="GitHub Enterprise Repo Reader")
 
 # --- Configuration ---
 GITHUB_APP_ID = os.getenv('GITHUB_APP_ID')
-GITHUB_PRIVATE_KEY_PATH = os.getenv('GITHUB_PRIVATE_KEY_PATH', '/app/cert/private-key.pem')
+GITHUB_PRIVATE_KEY_PATH = os.getenv('GITHUB_PRIVATE_KEY_PATH', '/app/certs/github.key')
 FAVICON_PATH = os.getenv('FAVICON_PATH', 'favicon.ico')
 GITHUB_API_URL = "https://api.github.com"
 
