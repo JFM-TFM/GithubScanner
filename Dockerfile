@@ -1,6 +1,7 @@
 FROM python:alpine
 WORKDIR /app
 EXPOSE 8443
+ENV PYTHONUNBUFFERED=1
 
 # Create user for the container
 RUN adduser -D --uid 10001 python
