@@ -224,8 +224,7 @@ async def webhook_handler(request: Request, x_hub_signature_256: str = Header(No
             
     # CASE C: Pushed to a Repository
     elif x_github_event == "push":
-        data = payload["push"]
-        msg = "Push event processed"
+        print(payload)
 
     
     if data:
