@@ -240,6 +240,22 @@ async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_nam
     return secrets
 
 
+async def get_installations(client: httpx.AsyncClient):            
+    # 1. Authenticate as the App to find installations
+    app_jwt = get_jwt()
+    app_headers = {
+        "Authorization": f"Bearer {app_jwt}",
+        "Accept": "application/vnd.github+json"
+    }
+    
+    # 2. Get installations
+    install_response = await http_request(client, f"{GITHUB_API_URL}/app/installations", headers=app_headers)
+    
+    if install_response.status_code != 200:
+        raise HTTPException(status_code=install_response.status_code, detail=install_response.text)
+    
+    return install_response.json()
+
 
 # --- Background Task for Full Scan ---
 
@@ -313,28 +329,14 @@ async def scan_handler(background_tasks: BackgroundTasks):
     try:
         # We use a single AsyncClient context for connection pooling
         async with httpx.AsyncClient() as client:
-            
-            # 1. Authenticate as the App to find installations
-            app_jwt = get_jwt()
-            app_headers = {
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json"
-            }
-            
-            # Get installations (This endpoint is paginated too, but typically small enough for one call.
-            # ideally, use get_all_pages here too if you have > 100 orgs)
-            install_response = await http_request(client, f"{GITHUB_API_URL}/app/installations", headers=app_headers)
-            
-            if install_response.status_code != 200:
-                raise HTTPException(status_code=install_response.status_code, detail=install_response.text)
-                
-            installations = install_response.json()
+            # 1. Retrieve all installations
+            installations = await get_installations(client)
             all_repositories = {}
             
             # 2. Loop through installations (Organizations)
-            for install in installations:
-                installation_id = install["id"]
-                owner = install["account"]["login"]
+            for installation in installations:
+                installation_id = installation["id"]
+                owner = installation["account"]["login"]
 
                 # For installation token, we need a fresh request
                 # 3. Get Installation Access Token
@@ -383,17 +385,22 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x
 
     payload_body = await request.body()
     verify_webhook_signature(payload_body, GITHUB_WEBHOOK_SECRET, x_hub_signature_256)
-    
     payload = await request.json()
-    
-    # We need an installation token to fetch diffs
-    if "installation" in payload:
-        installation_id = payload["installation"]["id"]
-    else:
-        return {"status": "No installation ID found"}
 
     async with httpx.AsyncClient() as client:
         try:
+            # We need to find the installation id corresponding to the repository
+            owner_id = payload["repository"]["owner"]["id"]
+            installation_id = None
+            installations = await get_installations(client)
+
+            for installation in installations:
+                if owner_id == installation["account"]["id"]:
+                    installation_id = installation["id"]
+
+            if not installation_id:
+                return {"status": "No installation ID found"}
+            
             token = await get_installation_token(client, installation_id)
         except Exception:
             return {"status": "Failed to get auth token"}
