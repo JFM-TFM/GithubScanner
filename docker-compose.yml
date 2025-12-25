@@ -30,6 +30,4 @@ services:
 
 volumes:
   splunk-etc:
-    description: "Stores Splunk configurations and apps"
   splunk-var:
-    description: "Stores Splunk indexed data and logs"
