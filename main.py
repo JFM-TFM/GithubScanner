@@ -195,13 +195,19 @@ async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_nam
         data = response.json()
 
         for file in data["files"]:
-            if file["status"] in ("modified", "added"):
+            # Analyze only added or modified files. Ignore any file as well that does not include patch (ex binary files)
+            if file["status"] in ("modified", "added") and "patch" in file:
                 diff_text = file["patch"]
+                # Ignore files with no change
+                if not diff_text:
+                    continue
+
                 added_lines = "\n".join([l for l in diff_text.split("\n") if l.startswith("+") and not l.startswith("+++")])
                 
                 # Detect secrets in the commit
                 access_keys = AWS_ACCESS_KEY_PATTERN.findall(added_lines)
                 secret_keys = AWS_SECRET_KEY_PATTERN.findall(added_lines)
+
                 if access_keys or secret_keys:
                     # Generate payload for the alert
                     secret_details = {
