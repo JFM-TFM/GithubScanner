@@ -228,10 +228,11 @@ async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_nam
                     secret_details["url"] = data["html_url"]
 
                     for access_key in access_keys:
-                        logger.warning(f"🚨 SECRET DETECTED in {file['filename']}!")
+                        logger.warning(f"🚨 AWS ACCESS KEY ID DETECTED in {file['filename']}!")
                         secrets["access_keys"][access_key] = secret_details
                     
                     for secret_key in secret_keys:
+                        logger.warning(f"🚨 Possible AWS SECRET KEY DETECTED in {file['filename']}!")
                         secrets["secret_keys"][secret_key] = secret_details
 
     else:
@@ -421,7 +422,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x
                 "Accept": "application/vnd.github+json" 
             }
             
-            logger.info(f"Scanning Push to {owner}/{repo} ({len(commits)} commits)")
+            logger.info(f"Scanning Push to {owner}/{repo} (Branch: {branch_name}. Commits: {len(commits)})")
 
             # Iterate through all commits to detect secrets
             for commit in commits:
