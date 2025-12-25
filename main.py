@@ -1,13 +1,17 @@
 import os
 import time
-import jwt
 import httpx
 import hmac
-import hashlib
-import re
-import base64
 import logging
+from re import compile
+from uuid import uuid4
+from jwt import encode as jwt_encode
+from datetime import datetime
+from hashlib import sha256
+from base64 import b64encode
+from boto3 import client as aws_client
 from time import sleep
+from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Request, Header, BackgroundTasks
 from fastapi.responses import FileResponse
 from typing import List, Dict, Any
@@ -23,55 +27,67 @@ GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
 GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com")
 GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "/app/certs/github.key")
 FAVICON_PATH = os.getenv("FAVICON_PATH", "favicon.ico")
-GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET") # New configuration
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
+HTTP_COLLECTOR = os.getenv("HTTP_COLLECTOR")
+HTTP_TOKEN = os.getenv("HTTP_TOKEN")
 
 # --- Regex Patterns for AWS Secrets ---
 # 1. AWS Access Key ID (Standard 20-char uppercase starting with specific prefixes)
-AWS_ACCESS_KEY_PATTERN = re.compile(r'(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}')
+AWS_ACCESS_KEY_PATTERN = compile(r"(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}")
 # 2. AWS Secret Access Key (40-char base64-like string)
-AWS_SECRET_KEY_PATTERN = re.compile(r'(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])')
+AWS_SECRET_KEY_PATTERN = compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
 
 # --- Helper Functions ---
 
 def get_jwt() -> str:
+    """
+    generate JWT for requests made to Github API
+    """
     if not GITHUB_APP_ID:
         raise HTTPException(status_code=500, detail="GITHUB_APP_ID not set")
     try:
-        with open(GITHUB_PRIVATE_KEY_PATH, 'r') as f:
+        with open(GITHUB_PRIVATE_KEY_PATH, "r") as f:
             private_key = f.read()
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail=f"Private key not found at {GITHUB_PRIVATE_KEY_PATH}")
 
     payload = {
-        'iat': int(time.time()) - 60,
-        'exp': int(time.time()) + (10 * 60),
-        'iss': GITHUB_APP_ID
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": GITHUB_APP_ID
     }
-    return jwt.encode(payload, private_key, algorithm='RS256')
+    return jwt_encode(payload, private_key, algorithm="RS256")
+
 
 async def get_installation_token(client: httpx.AsyncClient, installation_id: int) -> str:
+    """
+    Get the access token for installation (org)
+    """
     app_jwt = get_jwt()
     headers = {
         "Authorization": f"Bearer {app_jwt}",
         "Accept": "application/vnd.github+json"
     }
     url = f"{GITHUB_API_URL}/app/installations/{installation_id}/access_tokens"
-    resp = await http_request(client, url, headers=headers, method='POST')
-    if resp.status_code != 201:
-        logger.error(f"Failed to get token for installation {installation_id}: {resp.text}")
+    response = await http_request(client, url, headers=headers, method="POST")
+    if response.status_code != 201:
+        logger.error(f"Failed to get token for installation {installation_id}: {response.text}")
         raise Exception("Failed to get installation token")
-    return resp.json()['token']
+    return response.json()["token"]
 
 
-async def http_request(client: httpx.AsyncClient, url: str, headers: dict, method='GET', body={}, follow_redirects=False):
+async def http_request(client: httpx.AsyncClient, url: str, headers: dict, method="GET", body={}, follow_redirects=False):
+    """
+    Do async HTTP request. Avoid the rate limit of Github API
+    """
     response = None
-    if method == 'GET':
+    if method == "GET":
         response = await client.get(url, headers=headers, follow_redirects=follow_redirects)
     
-    elif method == 'POST':
+    elif method == "POST":
         response = await client.post(url, headers=headers, data=body, follow_redirects=follow_redirects)
     
-    retry_after = response.headers.get('retry_after')
+    retry_after = response.headers.get("retry_after")
     # Means the rate limit has been reached
     if retry_after:
         sleep(int(retry_after) + 1)
@@ -81,49 +97,29 @@ async def http_request(client: httpx.AsyncClient, url: str, headers: dict, metho
 
 
 def verify_webhook_signature(payload_body: bytes, secret_token: str, signature_header: str):
+    """
+    Check for valid signature and headers in the webhook call
+    """
     if not signature_header:
         raise HTTPException(status_code=403, detail="x-hub-signature-256 header is missing!")
-    hash_object = hmac.new(secret_token.encode('utf-8'), msg=payload_body, digestmod=hashlib.sha256)
+    hash_object = hmac.new(secret_token.encode("utf-8"), msg=payload_body, digestmod=sha256)
     expected_signature = "sha256=" + hash_object.hexdigest()
     if not hmac.compare_digest(expected_signature, signature_header):
         raise HTTPException(status_code=403, detail="Request signature is invalid")
 
 
-def scan_text_for_secrets(text: str, source: str):
+def validate_secret(access_key, secret_key):
     """
-    Scans a block of text for AWS secrets.
+    Check if the given AWS access key and secret key is valid
     """
-    access_keys = AWS_ACCESS_KEY_PATTERN.findall(text)
-    # We scan for secret keys too, but only log if we find an Access Key to reduce noise
-    # or if we are very confident. For this demo, we log Access Keys found.
-    
-    if access_keys:
-        logger.warning(f"🚨 SECRET DETECTED in {source}!")
-        for key in access_keys:
-            # Redact part of the key for logging
-            redacted = key[:4] + "*" * 12 + key[-4:]
-            logger.warning(f"   -> Found Potential AWS Access Key: {redacted}")
-
-
-async def scan_diff_url(client: httpx.AsyncClient, diff_url: str, token: str, source_label: str):
-    """
-    Fetches the Diff from GitHub and scans added lines (+).
-    """
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github.v3.diff" # Important to get raw diff
-    }
     try:
-        response = await http_request(client, diff_url, headers=headers, follow_redirects=True)
-        if response.status_code == 200:
-            diff_text = response.text
-            # Only scan lines starting with '+' (added code)
-            added_lines = "\n".join([line for line in diff_text.split('\n') if line.startswith('+') and not line.startswith('+++')])
-            scan_text_for_secrets(added_lines, source_label)
-        else:
-            logger.error(f"Failed to fetch diff from {diff_url}: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Error scanning diff {diff_url}: {e}")
+        sts = aws_client("sts", aws_access_key_id=access_key, aws_secret_access_key=secret_key)
+        sts.get_caller_identity()
+        return True
+    
+    except ClientError:
+        return False
+
 
 async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> List[Any]:
     """
@@ -154,6 +150,89 @@ async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> L
             
     return results
 
+async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, owner: str):
+    """
+    Send alerts of only valid secrets to Splunk HTTP Endpoint
+    """
+    for access_key, ak_details in secrets["access_keys"].items():
+        for secret_key, sk_details in secrets["secret_keys"].items():
+            if validate_secret(access_key, secret_key):
+                
+                # Add a single commit if the ak and sk are in the same file and commit Id
+                if ak_details["commit"] == sk_details["commit"] and ak_details["filename"] == sk_details["filename"]:
+                    commits = [ak_details]
+
+                # Add the details of both commits if the ak and sk are in different files or commits
+                else:
+                    commits = [ak_details, sk_details]
+
+                event_id = str(uuid4())
+                body = {
+                    "event_id": event_id,
+                    "access_key_digest": b64encode(sha256(access_key.encode()).hexdigest()),
+                    "access_key": f"{access_key[:4]}***",
+                    "secret_key": f"{secret_key[:4]}***",
+                    "organization": owner,
+                    "repository": repo,
+                    "time": int(datetime.now().timestamp()),
+                    "commits": commits
+                }
+
+                headers = {
+                    "Authorization": f"Splunk {HTTP_TOKEN}"
+                }
+
+                response = await http_request(client, HTTP_COLLECTOR, headers, method="POST", body=body)
+                
+                if response.status_code in (200, 201):
+                    print(f"Successfully posted Event ID: {event_id}")
+
+
+async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_name="main", secrets={"access_keys":{}, "secret_keys":{}}):
+    # Make a call to the commit url
+    response = await http_request(client, commit_url, headers)
+    if response.status_code == 200:
+        data = response.json()
+
+        for file in data["files"]:
+            if file["status"] in ("modified", "added"):
+                diff_text = file["patch"]
+                added_lines = "\n".join([l for l in diff_text.split("\n") if l.startswith("+") and not l.startswith("+++")])
+                
+                # Detect secrets in the commit
+                access_keys = AWS_ACCESS_KEY_PATTERN.findall(added_lines)
+                secret_keys = AWS_SECRET_KEY_PATTERN.findall(added_lines)
+                if access_keys or secret_keys:
+                    # Generate payload for the alert
+                    secret_details = {
+                        "commit": data["sha"],
+                        "filename": file["filename"],
+                        "branch": branch_name
+                    }
+                    secret_details.update(data["commit"])
+
+                    # Delete unnecessary fields
+                    del secret_details["tree"]
+                    del secret_details["url"]
+                    del secret_details["verification"]
+                    del secret_details["comment_count"]
+
+                    # Add fields to provide more context
+                    secret_details["verified"] = data["commit"]["verification"]["verified"]
+                    secret_details["url"] = data["html_url"]
+
+                    for access_key in access_keys:
+                        logger.warning(f"🚨 SECRET DETECTED in {file['filename']}!")
+                        secrets["access_keys"][access_key] = secret_details
+                    
+                    for secret_key in secret_keys:
+                        secrets["secret_keys"][secret_key] = secret_details
+
+    else:
+        logger.info("Could not retrieve the commit content")
+
+    return secrets
+
 
 
 # --- Background Task for Full Scan ---
@@ -161,10 +240,15 @@ async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> L
 async def background_scan_all_branches(installation_id: int, owner: str, repo: str):
     """
     1. List all branches.
-    2. For each branch, get the Git Tree (recursive).
-    3. Scan files.
+    2. For each branch, get the commits related.
+    3. Scan the commits.
     """
     logger.info(f"Starting full background scan for {owner}/{repo}...")
+    secrets = {
+        "access_keys": {},
+        "secret_keys": {}
+    }
+
     async with httpx.AsyncClient() as client:
         try:
             token = await get_installation_token(client, installation_id)
@@ -183,40 +267,19 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
             branches = branches_resp.json()
             
             for branch in branches:
-                branch_name = branch['name']
-                sha = branch['commit']['sha']
+                branch_name = branch["name"]
+                sha = branch["commit"]["sha"]
                 logger.info(f"Scanning branch: {branch_name} ({sha})")
 
-                # 2. Get Tree (Recursive)
-                tree_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/git/trees/{sha}?recursive=1"
-                tree_resp = await http_request(client, tree_url, headers=headers)
-                if tree_resp.status_code != 200:
-                    continue
+                # 2. Get Commits of the branch
+                commits_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits?sha={sha}"
+                commits = await http_request(client, commits_url, headers=headers)
+                for commit in commits:
+                    await scan_commit(client, commit["url"], headers, branch_name, secrets)
+
+                if HTTP_COLLECTOR and HTTP_TOKEN:
+                    await generate_alerts(client, secrets, repo, owner)
                 
-                tree_data = tree_resp.json()
-                
-                # 3. Iterate Files
-                # Limit to 50 files for demo purposes to avoid hitting API limits
-                files_to_scan = [item for item in tree_data.get('tree', []) if item['type'] == 'blob'][:50]
-                
-                for file_item in files_to_scan:
-                    path = file_item['path']
-                    blob_url = file_item['url']
-                    
-                    # Fetch Blob Content
-                    blob_resp = await http_request(client, blob_url, headers=headers)
-                    if blob_resp.status_code == 200:
-                        blob_json = blob_resp.json()
-                        content_b64 = blob_json.get('content', '')
-                        encoding = blob_json.get('encoding')
-                        
-                        if encoding == 'base64' and content_b64:
-                            try:
-                                decoded_content = base64.b64decode(content_b64).decode('utf-8', errors='ignore')
-                                scan_text_for_secrets(decoded_content, f"File: {branch_name}/{path}")
-                            except Exception:
-                                pass # Skip binary files or decoding errors
-            
             logger.info(f"Completed scan for {owner}/{repo}")
 
         except Exception as e:
@@ -226,7 +289,7 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
 
 @app.get("/")
 async def root():
-    return {"message": "GitHub Enterprise Secret Scanner. Use /scan/{owner}/{repo} to trigger a full scan."}
+    return {"message": "GitHub Enterprise Secret Scanner. Use /scan to trigger a full scan."}
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -235,7 +298,7 @@ async def favicon():
 
 
 @app.post("/scan")
-async def scan_all(background_tasks: BackgroundTasks):
+async def scan_handler(background_tasks: BackgroundTasks):
     """
     Async endpoint to scan all repositories across all installations.
     """
@@ -262,21 +325,13 @@ async def scan_all(background_tasks: BackgroundTasks):
             
             # 2. Loop through installations (Organizations)
             for install in installations:
-                install_id = install["id"]
+                installation_id = install["id"]
                 owner = install["account"]["login"]
 
                 # For installation token, we need a fresh request
                 # 3. Get Installation Access Token
-                token_url = f"{GITHUB_API_URL}/app/installations/{install_id}/access_tokens"
-                token_res = await http_request(client, token_url, headers=app_headers, method='POST')
+                access_token = await get_installation_token(client, installation_id)
 
-                # Ignore the accounts that return error                
-                if token_res.status_code != 201:
-                    logger.error(f"Could not get token for organization {owner}")
-                    continue
-                    
-                access_token = token_res.json()["token"]
-                
                 # 4. List Repositories using the Token
                 repo_headers = {
                     "Authorization": f"Bearer {access_token}",
@@ -294,7 +349,7 @@ async def scan_all(background_tasks: BackgroundTasks):
                 for repo in repos_data:
                     repo_name = repo["name"]
                     repo_names.append(repo_name)
-                    background_tasks.add_task(background_scan_all_branches, install_id, owner, repo_name)
+                    background_tasks.add_task(background_scan_all_branches, installation_id, owner, repo_name)
 
                 all_repositories[owner] = repo_names
 
@@ -313,7 +368,7 @@ async def scan_all(background_tasks: BackgroundTasks):
 @app.post("/webhook")
 async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x_hub_signature_256: str = Header(None), x_github_event: str = Header(None)):
     """
-    Handles Pull Request and Push events to scan for secrets.
+    Handles Repository Creation and Push events to scan for secrets.
     """
     if not GITHUB_WEBHOOK_SECRET:
         raise HTTPException(status_code=500, detail="GITHUB_WEBHOOK_SECRET is not configured")
@@ -324,8 +379,8 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x
     payload = await request.json()
     
     # We need an installation token to fetch diffs
-    if 'installation' in payload:
-        installation_id = payload['installation']['id']
+    if "installation" in payload:
+        installation_id = payload["installation"]["id"]
     else:
         return {"status": "No installation ID found"}
 
@@ -335,69 +390,44 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x
         except Exception:
             return {"status": "Failed to get auth token"}
 
-        # CASE 1: Pull Request
-        if x_github_event == 'pull_request' and payload.get('action') in ['opened', 'synchronize']:
-            pr = payload['pull_request']
-            diff_url = pr['diff_url']
-            pr_title = pr['title']
-            
-            logger.info(f"Scanning PR: {pr_title}")
-            await scan_diff_url(client, diff_url, token, f"PR: {pr_title}")
-            return {"status": "PR Scanned"}
+        # CASE 1: Push Event
+        if x_github_event == "push":
+            secrets = {
+                "access_keys": {},
+                "secret_keys": {}
+            }
 
-        # CASE 2: Push Event
-        elif x_github_event == 'push':
-            repo_full_name = payload['repository']['full_name']
-            ref = payload['ref'] # e.g., refs/heads/main
-            commits = payload.get('commits', [])
+            repo = payload["repository"]["name"]
+            owner = payload["repository"]["owner"]["name"]
+            branch_name = payload["ref"].rsplit("/")[-1]
+            commits = payload.get("commits", [])
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json" 
+            }
             
-            logger.info(f"Scanning Push to {repo_full_name} ({len(commits)} commits)")
-            
-            # Optimization: If many commits, use the 'compare' URL
-            before = payload.get('before')
-            after = payload.get('after')
-            
-            if before and after and not re.match(r'^0+$', before):
-                # Standard push
-                compare_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/compare/{before}...{after}"
-                # Note: The API returns JSON for compare, we need the diff format.
-                # Use the headers to request the diff format from the compare endpoint is tricky.
-                # Easier to iterate commits or use the diff_url provided in the commit object.
-                pass 
+            logger.info(f"Scanning Push to {owner}/{repo} ({len(commits)} commits)")
 
-            # Simple approach: Iterate up to 5 commits to avoid timeouts
-            for commit in commits[:5]:
-                commit_id = commit['id']
-                # The payload usually doesn't have the diff_url directly usable without auth headers
-                # Construct the commit URL
-                # "https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
-                commit_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/commits/{commit_id}"
-                
-                # Fetch the diff for this commit
-                headers = {
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github.v3.diff" 
-                }
-                resp = await http_request(client, commit_url, headers=headers)
-                if resp.status_code == 200:
-                    diff_text = resp.text
-                    added_lines = "\n".join([l for l in diff_text.split('\n') if l.startswith('+') and not l.startswith('+++')])
-                    scan_text_for_secrets(added_lines, f"Commit {commit_id[:7]}")
+            # Iterate through all commits to detect secrets
+            for commit in commits:
+                commit_id = commit["id"]
+                commit_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_id}"
+                await scan_commit(client, commit_url, headers, branch_name, secrets)
+            
+            if HTTP_COLLECTOR and HTTP_TOKEN:
+                await generate_alerts(client, secrets, repo, owner)
 
             return {"status": "Push Scanned"}
 
-        # CASE 3: Repository Created
-        elif x_github_event == 'repository' and payload.get('action') == 'created':
-            repo_full_name = payload['repository']['full_name']
-            owner, repo_name = repo_full_name.split('/')
+        # CASE 2: Repository Created
+        elif x_github_event == "repository" and payload.get("action") == "created":
+            repo = payload["repository"]["name"]
+            owner = payload["repository"]["owner"]["name"]
             
-            logger.info(f"🆕 New Repository Created: {repo_full_name}. Starting initial scan...")
-            # Trigger full scan of default branch
-            background_tasks.add_task(background_scan_all_branches, installation_id, owner, repo_name)
+            logger.info(f"🆕 New Repository Created: {owner}/{repo}. Starting initial scan...")
+            # Trigger full scan
+            background_tasks.add_task(background_scan_all_branches, installation_id, owner, repo)
             
             return {"status": "Repository creation processed - Scan started"}
 
     return {"status": "Event received"}
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

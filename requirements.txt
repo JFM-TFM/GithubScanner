@@ -4,3 +4,4 @@ uvicorn
 httpx
 pyjwt
 cryptography
+boto3
