@@ -1,11 +1,35 @@
 services:
   instance:
+    container_name: github_scanner
     build:
       context: . # The directory containing your Dockerfile
       dockerfile: Dockerfile # The name of your Dockerfile
     ports:
-      - "8443:8443"
+      - "8443:8443" # Instance API to be called by GitHub
     env_file:
-      - .env
+      - .env.scanner
     volumes:
       - ./certs:/app/certs # Mounts the 'data' directory from your host to '/app/data' inside the container
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    env_file:
+      - .env.splunk
+    ports:
+      - "8000:8000"   # Splunk Web UI
+      - "8080:8080"   # HTTP Collector Port
+    volumes:
+      - splunk-etc:/opt/splunk/etc
+      - splunk-var:/opt/splunk/var
+      - ./certs:/opt/splunk/etc/auth/mycerts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  splunk-etc:
+    description: "Stores Splunk configurations and apps"
+  splunk-var:
+    description: "Stores Splunk indexed data and logs"
