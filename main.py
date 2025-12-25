@@ -265,6 +265,7 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
                 return
             
             branches = branches_resp.json()
+
             
             for branch in branches:
                 branch_name = branch["name"]
@@ -273,7 +274,8 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
 
                 # 2. Get Commits of the branch
                 commits_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits?sha={sha}"
-                commits = await http_request(client, commits_url, headers=headers)
+                commits_resp = await http_request(client, commits_url, headers=headers)
+                commits = commits_resp.json()
                 for commit in commits:
                     await scan_commit(client, commit["url"], headers, branch_name, secrets)
 
