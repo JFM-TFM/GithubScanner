@@ -181,13 +181,16 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                 }
 
                 headers = {
-                    "Authorization": f"Splunk {SPLUNK_TOKEN}"
+                    "Authorization": f"Splunk {SPLUNK_TOKEN}",
+                    "X-Splunk-Request-Channel": SPLUNK_CHANNEL   
                 }
 
-                response = await http_request(client, SPLUNK_URL, headers, method="POST", body=body)
+                response = await http_request(client, f"{SPLUNK_URL}/services/collector?index={SPLUNK_INDEX}", headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
                     print(f"Successfully posted Event ID: {event_id}")
+                else:
+                    print(response.json())
 
 
 async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_name="main", secrets={"access_keys":{}, "secret_keys":{}}):
