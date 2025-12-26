@@ -21,7 +21,7 @@ services:
     volumes:
       - splunk-etc:/opt/splunk/etc
       - splunk-var:/opt/splunk/var
-      - ./certs:/opt/splunk/etc/auth/mycerts
+    #  - ./certs:/opt/splunk/etc/auth/mycerts # Enable https
     healthcheck:
       test: ["CMD", "curl", "-f", "https://localhost:8000"]
       interval: 30s
