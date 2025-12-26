@@ -156,13 +156,11 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
     """
     Send alerts of only valid secrets to Splunk HTTP Endpoint
     """
-    print(f"Possible secrets detected in repository {owner}/{repo}")
-
     for access_key, ak_details in secrets["access_keys"].items():
         for secret_key, sk_details in secrets["secret_keys"].items():
             if validate_secret(access_key, secret_key):
-                ak_snippet = f"{access_key[:4]}***{access_key[-4:]}"
-                sk_snippet = f"{secret_key[:4]}***{secret_key[-4:]}"
+                ak_snippet = f"{access_key[:4]}****{access_key[-4:]}"
+                sk_snippet = f"{secret_key[:4]}****{secret_key[-4:]}"
                 print(f"Found valid AWS secrets. AK: {ak_snippet}. SK: {sk_snippet}")
 
                 # Add a single commit if the ak and sk are in the same file and commit Id
