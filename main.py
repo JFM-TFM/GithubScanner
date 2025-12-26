@@ -173,6 +173,9 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
 
                 event_id = str(uuid4())
                 body = {
+                    "event": "AWS Secrets Detected",
+                    "sourcetype": "_json",
+                    "index": SPLUNK_INDEX,
                     "event_id": event_id,
                     "access_key_digest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
                     "access_key": ak_snippet,
@@ -188,7 +191,7 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                     "X-Splunk-Request-Channel": SPLUNK_CHANNEL   
                 }
 
-                response = await http_request(client, f"{SPLUNK_URL}/services/collector/event?index={SPLUNK_INDEX}", headers, method="POST", body=body)
+                response = await http_request(client, f"{SPLUNK_URL}/services/collector/event", headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
                     print(f"Successfully posted Event ID: {event_id}")
