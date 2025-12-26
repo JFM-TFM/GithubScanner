@@ -35,7 +35,7 @@ SPLUNK_CHANNEL = os.getenv("SPLUNK_CHANNEL")
 
 # --- Regex Patterns for AWS Secrets ---
 # 1. AWS Access Key ID (Standard 20-char uppercase starting with specific prefixes)
-AWS_ACCESS_KEY_PATTERN = compile(r"(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}")
+AWS_ACCESS_KEY_PATTERN = compile(r"(?:AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}")
 # 2. AWS Secret Access Key (40-char base64-like string)
 AWS_SECRET_KEY_PATTERN = compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
 
