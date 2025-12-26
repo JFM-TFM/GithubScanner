@@ -176,7 +176,7 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                 event_id = str(uuid4())
                 body = {
                     "event_id": event_id,
-                    "access_key_digest": b64encode(sha256(access_key.encode()).hexdigest()),
+                    "access_key_digest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
                     "access_key": ak_snippet,
                     "secret_key": sk_snippet,
                     "organization": owner,
