@@ -188,7 +188,7 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                     "X-Splunk-Request-Channel": SPLUNK_CHANNEL   
                 }
 
-                response = await http_request(client, f"{SPLUNK_URL}/services/collector?index={SPLUNK_INDEX}", headers, method="POST", body=body)
+                response = await http_request(client, f"{SPLUNK_URL}/services/collector/event?index={SPLUNK_INDEX}", headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
                     print(f"Successfully posted Event ID: {event_id}")
