@@ -87,7 +87,7 @@ async def http_request(client: httpx.AsyncClient, url: str, headers: dict, metho
         response = await client.get(url, headers=headers, follow_redirects=follow_redirects)
     
     elif method == "POST":
-        response = await client.post(url, headers=headers, data=body, follow_redirects=follow_redirects)
+        response = await client.post(url, headers=headers, json=body, follow_redirects=follow_redirects)
     
     retry_after = response.headers.get("retry_after")
     # Means the rate limit has been reached
@@ -161,8 +161,8 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
     for access_key, ak_details in secrets["access_keys"].items():
         for secret_key, sk_details in secrets["secret_keys"].items():
             if validate_secret(access_key, secret_key):
-                ak_snippet = f"{access_key[:4]}***"
-                sk_snippet = f"{secret_key[:4]}***"
+                ak_snippet = f"{access_key[:4]}***{access_key[-4:]}"
+                sk_snippet = f"{secret_key[:4]}***{secret_key[-4:]}"
                 print(f"Found valid AWS secrets. AK: {ak_snippet}. SK: {sk_snippet}")
 
                 # Add a single commit if the ak and sk are in the same file and commit Id
