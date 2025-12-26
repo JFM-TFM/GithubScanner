@@ -28,8 +28,10 @@ GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com")
 GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH", "/app/certs/github.key")
 FAVICON_PATH = os.getenv("FAVICON_PATH", "favicon.ico")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
-HTTP_COLLECTOR = os.getenv("HTTP_COLLECTOR")
-HTTP_TOKEN = os.getenv("HTTP_TOKEN")
+SPLUNK_URL = os.getenv("SPLUNK_URL")
+SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN")
+SPLUNK_INDEX = os.getenv("SPLUNK_INDEX")
+SPLUNK_CHANNEL = os.getenv("SPLUNK_CHANNEL")
 
 # --- Regex Patterns for AWS Secrets ---
 # 1. AWS Access Key ID (Standard 20-char uppercase starting with specific prefixes)
@@ -179,10 +181,10 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                 }
 
                 headers = {
-                    "Authorization": f"Splunk {HTTP_TOKEN}"
+                    "Authorization": f"Splunk {SPLUNK_TOKEN}"
                 }
 
-                response = await http_request(client, HTTP_COLLECTOR, headers, method="POST", body=body)
+                response = await http_request(client, SPLUNK_URL, headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
                     print(f"Successfully posted Event ID: {event_id}")
@@ -302,7 +304,7 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
                 for commit in commits:
                     await scan_commit(client, commit["url"], headers, branch_name, secrets)
 
-                if HTTP_COLLECTOR and HTTP_TOKEN:
+                if SPLUNK_URL and SPLUNK_TOKEN and SPLUNK_INDEX and SPLUNK_CHANNEL:
                     await generate_alerts(client, secrets, repo, owner)
                 
             logger.info(f"Completed scan for {owner}/{repo}")
@@ -430,7 +432,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks, x
                 commit_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_id}"
                 await scan_commit(client, commit_url, headers, branch_name, secrets)
             
-            if HTTP_COLLECTOR and HTTP_TOKEN:
+            if SPLUNK_URL and SPLUNK_TOKEN and SPLUNK_INDEX and SPLUNK_CHANNEL:
                 await generate_alerts(client, secrets, repo, owner)
 
             return {"status": "Push Scanned"}
