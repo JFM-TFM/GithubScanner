@@ -282,10 +282,6 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
     3. Scan the commits.
     """
     logger.info(f"Starting full background scan for {owner}/{repo}...")
-    secrets = {
-        "access_keys": {},
-        "secret_keys": {}
-    }
 
     async with httpx.AsyncClient() as client:
         try:
@@ -306,6 +302,10 @@ async def background_scan_all_branches(installation_id: int, owner: str, repo: s
 
             
             for branch in branches:
+                secrets = {
+                    "access_keys": {},
+                    "secret_keys": {}
+                }
                 branch_name = branch["name"]
                 sha = branch["commit"]["sha"]
                 logger.info(f"Scanning branch: {branch_name} ({sha})")
