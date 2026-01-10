@@ -33,6 +33,7 @@ SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN")
 SPLUNK_INDEX = os.getenv("SPLUNK_INDEX", "github")
 SPLUNK_CHANNEL = os.getenv("SPLUNK_CHANNEL")
 SOURCE_NAME = os.getenv("SOURCE_NAME", "Github Scanner")
+DEBUG = os.getenv("DEBUG", "false") == "true"
 
 # --- Regex Patterns for AWS Secrets ---
 # 1. AWS Access Key ID (Standard 20-char uppercase starting with specific prefixes)
@@ -133,7 +134,7 @@ async def get_all_pages(client: httpx.AsyncClient, url: str, headers: Dict) -> L
         response = await http_request(client, url, headers=headers)
         if response.status_code != 200:
             # We log error but don"t crash entire loop, just return what we have or throw
-            print(f"Error fetching {url}: {response.text}")
+            logger.error(f"Error fetching {url}: {response.text}")
             break
             
         data = response.json()
@@ -162,7 +163,7 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
             if validate_secret(access_key, secret_key):
                 ak_snippet = f"{access_key[:4]}****{access_key[-4:]}"
                 sk_snippet = f"{secret_key[:4]}****{secret_key[-4:]}"
-                print(f"Found valid AWS secrets. AK: {ak_snippet}. SK: {sk_snippet}")
+                logger.info(f"Found valid AWS secrets. AK: {ak_snippet}. SK: {sk_snippet}")
 
                 # Add a single commit if the ak and sk are in the same file and commit Id
                 if ak_details["commit"] == sk_details["commit"] and ak_details["filename"] == sk_details["filename"]:
@@ -197,9 +198,9 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                 response = await http_request(client, SPLUNK_URL, headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
-                    print(f"Successfully posted Event ID: {event_id}")
+                    logger.info(f"Successfully posted Event ID: {event_id}")
                 else:
-                    print(response.json())
+                    logger.error(response.json())
 
 
 async def scan_commit(client: httpx.AsyncClient, commit_url, headers, branch_name="main", secrets={"access_keys":{}, "secret_keys":{}}):
@@ -356,6 +357,8 @@ async def scan_handler(background_tasks: BackgroundTasks):
                 # For installation token, we need a fresh request
                 # 3. Get Installation Access Token
                 access_token = await get_installation_token(client, installation_id)
+                if DEBUG:
+                    logger.info(f"Installation {installation_id}. Access token: {access_token}")
 
                 # 4. List Repositories using the Token
                 repo_headers = {
