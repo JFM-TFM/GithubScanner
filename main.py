@@ -30,8 +30,9 @@ FAVICON_PATH = os.getenv("FAVICON_PATH", "favicon.ico")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 SPLUNK_URL = os.getenv("SPLUNK_URL")
 SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN")
-SPLUNK_INDEX = os.getenv("SPLUNK_INDEX")
+SPLUNK_INDEX = os.getenv("SPLUNK_INDEX", "github")
 SPLUNK_CHANNEL = os.getenv("SPLUNK_CHANNEL")
+SOURCE_NAME = os.getenv("SOURCE_NAME", "Github Scanner")
 
 # --- Regex Patterns for AWS Secrets ---
 # 1. AWS Access Key ID (Standard 20-char uppercase starting with specific prefixes)
@@ -61,23 +62,6 @@ def get_jwt() -> str:
     return jwt_encode(payload, private_key, algorithm="RS256")
 
 
-async def get_installation_token(client: httpx.AsyncClient, installation_id: int) -> str:
-    """
-    Get the access token for installation (org)
-    """
-    app_jwt = get_jwt()
-    headers = {
-        "Authorization": f"Bearer {app_jwt}",
-        "Accept": "application/vnd.github+json"
-    }
-    url = f"{GITHUB_API_URL}/app/installations/{installation_id}/access_tokens"
-    response = await http_request(client, url, headers=headers, method="POST")
-    if response.status_code != 201:
-        logger.error(f"Failed to get token for installation {installation_id}: {response.text}")
-        raise Exception("Failed to get installation token")
-    return response.json()["token"]
-
-
 async def http_request(client: httpx.AsyncClient, url: str, headers: dict, method="GET", body={}, follow_redirects=False):
     """
     Do async HTTP request. Avoid the rate limit of Github API
@@ -95,7 +79,24 @@ async def http_request(client: httpx.AsyncClient, url: str, headers: dict, metho
         sleep(int(retry_after) + 1)
         return await http_request(client, url, headers, method, body, follow_redirects)
 
-    return response        
+    return response 
+
+
+async def get_installation_token(client: httpx.AsyncClient, installation_id: int) -> str:
+    """
+    Get the access token for installation (org)
+    """
+    app_jwt = get_jwt()
+    headers = {
+        "Authorization": f"Bearer {app_jwt}",
+        "Accept": "application/vnd.github+json"
+    }
+    url = f"{GITHUB_API_URL}/app/installations/{installation_id}/access_tokens"
+    response = await http_request(client, url, headers=headers, method="POST")
+    if response.status_code != 201:
+        logger.error(f"Failed to get token for installation {installation_id}: {response.text}")
+        raise Exception("Failed to get installation token")
+    return response.json()["token"]      
 
 
 def verify_webhook_signature(payload_body: bytes, secret_token: str, signature_header: str):
@@ -173,17 +174,19 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
 
                 event_id = str(uuid4())
                 body = {
-                    "event": "AWS Secrets Detected",
+                    "event": {
+                        "eventId": event_id,
+                        "accessKeyDigest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
+                        "accessKey": ak_snippet,
+                        "secretKey": sk_snippet,
+                        "organization": owner,
+                        "repository": repo,
+                        "commits": commits
+                    },
                     "sourcetype": "_json",
-                    "index": SPLUNK_INDEX,
-                    "event_id": event_id,
-                    "access_key_digest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
-                    "access_key": ak_snippet,
-                    "secret_key": sk_snippet,
-                    "organization": owner,
-                    "repository": repo,
                     "time": int(datetime.now().timestamp()),
-                    "commits": commits
+                    "index": SPLUNK_INDEX,
+                    "source": SOURCE_NAME
                 }
 
                 headers = {
@@ -191,7 +194,7 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                     "X-Splunk-Request-Channel": SPLUNK_CHANNEL   
                 }
 
-                response = await http_request(client, f"{SPLUNK_URL}/services/collector/event", headers, method="POST", body=body)
+                response = await http_request(client, SPLUNK_URL, headers, method="POST", body=body)
                 
                 if response.status_code in (200, 201):
                     print(f"Successfully posted Event ID: {event_id}")
