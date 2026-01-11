@@ -63,6 +63,27 @@ def get_jwt() -> str:
     return jwt_encode(payload, private_key, algorithm="RS256")
 
 
+def capitalize_keys(data):
+    """
+    Recursively capitalizes all keys in a dictionary (and nested dictionaries/lists).
+    """
+    if isinstance(data, dict):
+        new_dict = {}
+        for key, value in data.items():
+            # Capitalize the current key
+            new_key = key.capitalize()
+            # Recursively process the value
+            new_value = capitalize_keys(value)
+            new_dict[new_key] = new_value
+        return new_dict
+    elif isinstance(data, list):
+        # Recursively process items in a list
+        return [capitalize_keys(item) for item in data]
+    else:
+        # Return non-dict/non-list values as is
+        return data
+
+
 async def http_request(client: httpx.AsyncClient, url: str, headers: dict, method="GET", body={}, follow_redirects=False):
     """
     Do async HTTP request. Avoid the rate limit of Github API
@@ -176,13 +197,13 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                 event_id = str(uuid4())
                 body = {
                     "event": {
-                        "eventId": event_id,
-                        "accessKeyDigest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
-                        "accessKey": ak_snippet,
-                        "secretKey": sk_snippet,
-                        "organization": owner,
-                        "repository": repo,
-                        "commits": commits
+                        "EventId": event_id,
+                        "AccessKeyDigest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
+                        "AccessKey": ak_snippet,
+                        "SecretKey": sk_snippet,
+                        "RepositoryOrg": owner,
+                        "Repository": repo,
+                        "Commits": capitalize_keys(commits)
                     },
                     "sourcetype": "_json",
                     "time": int(datetime.now().timestamp()),
