@@ -199,8 +199,8 @@ async def generate_alerts(client: httpx.AsyncClient, secrets: dict, repo: str, o
                     "event": {
                         "EventId": event_id,
                         "AccessKeyDigest": b64encode(sha256(access_key.encode()).hexdigest().encode()).decode(),
-                        "AccessKey": ak_snippet,
-                        "SecretKey": sk_snippet,
+                        "AccessKeyId": ak_snippet,
+                        "SecretAccessKey": sk_snippet,
                         "RepositoryOrg": owner,
                         "Repository": repo,
                         "Commits": capitalize_keys(commits)
