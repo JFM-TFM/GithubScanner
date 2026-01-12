@@ -22,7 +22,7 @@ services:
       - splunk-etc:/opt/splunk/etc
       - splunk-var:/opt/splunk/var
       - ./default.yml:/tmp/defaults/default.yml
-      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem # Cert for HTTPS
+      - ./certs:/opt/splunk/etc/auth/mycerts # Cert for HTTPS
     healthcheck:
       test: ["CMD", "curl", "-f", "https://localhost:8000"]
       interval: 30s
