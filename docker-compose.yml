@@ -9,7 +9,7 @@ services:
     env_file:
       - .env.scanner
     volumes:
-      - ./certs:/app/certs # Mounts the 'data' directory from your host to '/app/data' inside the container
+      - ./certs:/app/certs:ro # Mounts the 'data' directory from your host to '/app/data' inside the container
   splunk:
     image: splunk/splunk:latest
     container_name: splunk
@@ -21,8 +21,8 @@ services:
     volumes:
       - splunk-etc:/opt/splunk/etc
       - splunk-var:/opt/splunk/var
-      - ./inputs.conf:/opt/splunk/etc/apps/splunk_httpinput/local/inputs.conf
-      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem # Enable https
+      - ./inputs.conf:/opt/splunk/etc/apps/splunk_httpinput/local/inputs.conf:ro # Configure HTTPS for Splunk
+      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem:ro # Enable https
     healthcheck:
       test: ["CMD", "curl", "-f", "https://localhost:8000"]
       interval: 30s
