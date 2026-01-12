@@ -21,13 +21,14 @@ services:
     volumes:
       - splunk-etc:/opt/splunk/etc
       - splunk-var:/opt/splunk/var
-      - ./inputs.conf:/opt/splunk/etc/apps/splunk_httpinput/local/inputs.conf:ro # Configure HTTPS for Splunk
-      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem:ro # Enable https
+      - ./configure-hec-ssl.sh:/configure-hec-ssl.sh
+      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem # Cert for HTTPS
     healthcheck:
       test: ["CMD", "curl", "-f", "https://localhost:8000"]
       interval: 30s
       timeout: 10s
       retries: 5
+    entrypoint: ["/bin/bash", "-c", "/configure-hec-ssl.sh && /sbin/entrypoint.sh start"]
 
 volumes:
   splunk-etc:
