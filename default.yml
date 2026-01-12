@@ -1,0 +1,6 @@
+splunk:
+  hec:
+    cert: /opt/splunk/etc/auth/mycerts/splunk.pem
+    enable: true
+    port: 8088
+    ssl: true
