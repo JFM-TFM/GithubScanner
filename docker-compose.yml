@@ -21,7 +21,8 @@ services:
     volumes:
       - splunk-etc:/opt/splunk/etc
       - splunk-var:/opt/splunk/var
-    #  - ./certs:/opt/splunk/etc/auth/mycerts # Enable https
+      - ./inputs.conf:/opt/splunk/etc/apps/splunk_httpinput/local/inputs.conf
+      - ./certs/splunk.pem:/opt/splunk/etc/auth/mycerts/splunk.pem # Enable https
     healthcheck:
       test: ["CMD", "curl", "-f", "https://localhost:8000"]
       interval: 30s
