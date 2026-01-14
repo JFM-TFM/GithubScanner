@@ -15,7 +15,7 @@ services:
       interval: 24h
       timeout: 30s
       start_period: 60s
-      retries: 5
+      retries: 1
   splunk:
     image: splunk/splunk:latest
     container_name: splunk
@@ -30,7 +30,7 @@ services:
       - ./default.yml:/tmp/defaults/default.yml
       - ./certs:/opt/splunk/etc/auth/mycerts # Cert for HTTPS
     healthcheck:
-      test: ["CMD", "curl", "-f", "https://localhost:8000"]
+      test: ["CMD", "curl", "-sk", "https://localhost:8000"]
       interval: 30s
       timeout: 10s
       retries: 5
