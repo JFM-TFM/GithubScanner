@@ -22,9 +22,13 @@ RUN apk -v cache clean
 RUN apk --purge del curl apk-tools
 RUN rm -f /bin/sh
 
+WORKDIR /app
 COPY main.py .
 COPY favicon.ico .
+COPY healthcheck.py .
 
 USER python
+
+HEALTHCHECK --interval=24h --timeout=30s --start-period=1m --retries=1 CMD [ "python", "healthcheck.py" ]
 
 CMD ["gunicorn", "--certfile", "certs/server.crt", "--keyfile", "certs/server.key", "-k", "uvicorn.workers.UvicornWorker",  "--bind", "0.0.0.0:8443", "main:app"]
