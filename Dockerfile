@@ -22,7 +22,6 @@ RUN apk -v cache clean
 RUN apk --purge del curl apk-tools
 RUN rm -f /bin/sh
 
-WORKDIR /app
 COPY main.py .
 COPY favicon.ico .
 COPY healthcheck.py .
