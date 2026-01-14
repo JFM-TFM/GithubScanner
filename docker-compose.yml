@@ -10,6 +10,12 @@ services:
       - .env.scanner
     volumes:
       - ./certs:/app/certs:ro # Mounts the 'data' directory from your host to '/app/data' inside the container
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 24h
+      timeout: 30s
+      start_period: 60s
+      retries: 5
   splunk:
     image: splunk/splunk:latest
     container_name: splunk
