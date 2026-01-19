@@ -14,8 +14,12 @@ services:
       test: ["CMD", "python", "healthcheck.py"]
       interval: 24h
       timeout: 30s
-      start_period: 60s
+      start_period: 10s
+      start_interval: 10s
       retries: 1
+    depends_on:
+      splunk:
+        condition: service_healthy
   splunk:
     image: splunk/splunk:latest
     container_name: splunk
